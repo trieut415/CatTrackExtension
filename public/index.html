@@ -1,0 +1,145 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cat State Data and RPi Camera Stream</title>
+    <script src="https://cdn.canvasjs.com/canvasjs.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #videoElement {
+            width: 640px;
+            height: 480px;
+            display: block;
+            margin-bottom: 20px;
+        }
+        #chartContainer {
+            height: 500px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Raspberry Pi Camera Stream</h1>
+    <video id="videoElement" controls autoplay muted></video>
+
+    <h2>Cat State Over Time</h2>
+    <div id="chartContainer"></div>
+
+    <script>
+        // Video Stream Setup
+        const video = document.getElementById('videoElement');
+        const videoSrc = 'http://192.168.1.103:8000/stream.m3u8'; // Update the source URL
+
+        if (Hls.isSupported()) {
+            const hls = new Hls();
+            hls.loadSource(videoSrc);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                video.play();
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = videoSrc;
+            video.addEventListener('loadedmetadata', function () {
+                video.play();
+            });
+        } else {
+            console.error('HLS is not supported in this browser.');
+        }
+
+        // Chart and Socket Setup
+        const socket = io();
+
+        socket.on('data', (data) => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            const chartData = processData(data);
+            renderChart(chartData);
+        });
+
+        function getStateValue(state) {
+            if (!state || typeof state !== 'string') {
+                return null;
+            }
+            const cleanState = state.replace('Cat state: ', '');
+            switch (cleanState) {
+                case "Sleepy Time": return 0;
+                case "Wander Time": return 1;
+                case "Moonwalk Time": return 2;
+                default: return null;
+            }
+        }
+
+        function processData(data) {
+            const stateDataPoints = [];
+
+            data.forEach(record => {
+                const time = new Date(record.time);
+                const stateValue = getStateValue(record.state);
+
+                if (stateValue !== null && !isNaN(time.getTime())) {
+                    stateDataPoints.push({ x: time, y: stateValue });
+                }
+            });
+
+            return { stateDataPoints };
+        }
+
+        function renderChart(dataPoints) {
+            if (dataPoints.stateDataPoints.length === 0) {
+                console.error("No valid data points to render");
+                return;
+            }
+
+            const chart = new CanvasJS.Chart("chartContainer", {
+                animationEnabled: true,
+                title: {
+                    text: "Cat State Over Time",
+                    fontFamily: "arial black",
+                    fontColor: "#695A42"
+                },
+                axisX: {
+                    title: "Time",
+                    labelAngle: -45,
+                    valueFormatString: "HH:mm:ss"
+                },
+                axisY: {
+                    title: "Cat State",
+                    includeZero: true,
+                    interval: 1,
+                    labelFormatter: function(e) {
+                        if (e.value === 0) return "Sleepy Time";
+                        if (e.value === 1) return "Wander Time";
+                        if (e.value === 2) return "Moonwalk Time";
+                        return "";
+                    }
+                },
+                data: [
+                    {
+                        type: "line",
+                        name: "Cat State",
+                        showInLegend: true,
+                        dataPoints: dataPoints.stateDataPoints
+                    }
+                ]
+            });
+            chart.render();
+        }
+
+        function toggleDataSeries(e) {
+            if (typeof(e.dataSeries.visible) === "undefined" || e.dataSeries.visible) {
+                e.dataSeries.visible = false;
+            } else {
+                e.dataSeries.visible = true;
+            }
+            e.chart.render();
+        }
+    </script>
+</body>
+</html>
