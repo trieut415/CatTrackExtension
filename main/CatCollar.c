@@ -34,6 +34,9 @@
 // GPIO for button press
 #define BUTTON_GPIO GPIO_NUM_15
 
+// Buzzer GPIO
+#define BUZZER_GPIO GPIO_NUM_36
+
 // Master I2C
 #define I2C_MASTER_SCL_PIN                 22   // GPIO number for I2C CLK
 #define I2C_MASTER_SDA_PIN                 23   // GPIO number for I2C DATA
@@ -63,8 +66,6 @@
 #define VISIBLE_CHARACTERS    4     // Number of characters visible on the display
 #define SCROLL_THRESHOLD      4     // Threshold to decide whether to scroll
 
-#define BUTTON_GPIO GPIO_NUM_15
-
 #define UART_NUM UART_NUM_0  // Using UART0
 #define BUF_SIZE (1024)      // UART buffer size
 
@@ -80,6 +81,10 @@
 
 #define HOST_IP_ADDR "192.168.1.103"
 #define PORT 3333
+
+// cat collar definitions
+
+bool is_leader = false;
 
 typedef enum {
     CAT_SLEEP = 0,       // Idle (sleeps on his back so roll & -Z)
@@ -524,6 +529,8 @@ int set_brightness_max(uint8_t val) {
 }
 void test_alpha_display(void *arg)
 {
+    extern bool is_leader;
+    
     // Debug
     int ret;
     printf(">> Test Alphanumeric Display: \n");
@@ -738,6 +745,114 @@ range_t getRange(void) {
 
 dataRate_t getDataRate(void) {
   return (dataRate_t)(readRegister(ADXL343_REG_BW_RATE) & 0x0F);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+void buzz(){
+    static int64_t last_buzz_time = 0;
+    int64_t current_time = esp_timer_get_time();
+
+    if (current_time - last_buzz_time > 5000000) {
+        last_buzz_time = current_time;
+        
+        // Turn on the buzzer
+        gpio_set_level(BUZZER_GPIO, 1);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+        // Turn off the buzzer
+        gpio_set_level(BUZZER_GPIO, 0);
+    } else {
+        ESP_LOGI(TAG, "Buzzer activation skipped to prevent rapid triggering");
+    }
+}
+
+void set_cat_leader_status(bool is_currently_leader)
+{
+    // Lock the mutex
+    xSemaphoreTake(data_mutex, portMAX_DELAY);
+
+    is_leader = is_currently_leader;
+
+    // Release the mutex
+    xSemaphoreGive(data_mutex);
+}
+
+void network_listener_task(void *pvParameters)
+{
+    // Create a UDP socket
+    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (sockfd < 0) {
+        ESP_LOGE(TAG, "Failed to create socket");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Bind the socket to the unique port
+    struct sockaddr_in local_addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(LISTEN_PORT),
+        .sin_addr.s_addr = htonl(INADDR_ANY),
+    };
+
+    if (bind(sockfd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
+        ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+        close(sockfd);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Socket bound to port %d, listening for leader status updates", LISTEN_PORT);
+
+    char rx_buffer[128];
+    int current_leader_id = -1;  // Initialize to an invalid leader ID
+
+    while (1) {
+        struct sockaddr_in source_addr;
+        socklen_t socklen = sizeof(source_addr);
+        int len = recvfrom(sockfd, rx_buffer, sizeof(rx_buffer) - 1, 0,
+                           (struct sockaddr *)&source_addr, &socklen);
+
+        if (len < 0) {
+            ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+            break;
+        } else {
+            // Null-terminate the received data
+            rx_buffer[len] = 0;
+            ESP_LOGI(TAG, "Received %d bytes from %s: %s", len,
+                     inet_ntoa(source_addr.sin_addr), rx_buffer);
+
+            // Parse the message to get the leader ID
+            int leader_id = -1;
+            if (sscanf(rx_buffer, "LEADER_ID:%d", &leader_id) == 1) {
+                ESP_LOGI(TAG, "Current leader ID: %d", leader_id);
+
+                // Check if there's a leader change
+                if (leader_id != current_leader_id) {
+                    // Update the current leader ID
+                    current_leader_id = leader_id;
+
+                    // Activate the buzzer on leader change
+                    ESP_LOGI(TAG, "Leader change detected, activating buzzer");
+                    activate_buzzer();
+
+                    // Update the display or behavior based on whether this Cat Collar is the leader
+                    if (CAT_ID == current_leader_id) {
+                        ESP_LOGI(TAG, "This Cat Collar is now the leader!");
+                        // Update display or behavior to indicate leader status
+                        set_cat_leader_status(true);
+                    } else {
+                        ESP_LOGI(TAG, "This Cat Collar is not the leader.");
+                        set_cat_leader_status(false);
+                    }
+                }
+            } else {
+                ESP_LOGW(TAG, "Received invalid message: %s", rx_buffer);
+            }
+        }
+    }
+
+    close(sockfd);
+    vTaskDelete(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
