@@ -1,41 +1,32 @@
 const dgram = require('dgram');
-const express = require('express');
-const socketIo = require('socket.io');
-const path = require('path');
+const fs = require('fs');
 
-const PORT = 3333; // Same port as used in the C code
-const HOST = '192.168.1.103'; // Raspberry Pi's IP address
+// Port and IP for the server
+const PORT = 3333;
+const HOST = '192.168.1.103';
 
-// Create UDP socket
-const udpServer = dgram.createSocket('udp4');
+// Create the UDP socket
+const server = dgram.createSocket('udp4');
 
-// Create HTTP server with Express
-const app = express();
-const httpServer = app.listen(3000, () => {
-    console.log('HTTP server running on http://localhost:3000');
-});
-const io = socketIo(httpServer);
-
-// Serve index.html
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+// Start listening on the specified port and IP
+server.on('listening', () => {
+    const address = server.address();
+    console.log(`UDP Server listening on ${address.address}:${address.port}`);
 });
 
-// Handle incoming UDP messages
-udpServer.on('message', (msg, rinfo) => {
-    console.log(`Received message: ${msg} from ${rinfo.address}:${rinfo.port}`);
-
-    // Broadcast the received message to all connected WebSocket clients
-    io.emit('data', { message: msg.toString() });
+// On message received
+server.on('message', (message, remote) => {
+    console.log(`Received message from ${remote.address}:${remote.port} - ${message}`);
+    
+    // Append the message to a text file
+    fs.appendFile('cat_status_log.txt', message + '\n', (err) => {
+        if (err) {
+            console.log('Error writing to file:', err);
+        } else {
+            console.log('Message saved to cat_status_log.txt');
+        }
+    });
 });
 
-// Start listening for UDP messages
-udpServer.bind(PORT, HOST, () => {
-    console.log(`UDP server listening on ${HOST}:${PORT}`);
-});
-
-// Handle any UDP errors
-udpServer.on('error', (err) => {
-    console.error(`UDP server error:\n${err.stack}`);
-    udpServer.close();
-});
+// Bind server to port and IP
+server.bind(PORT, HOST);
