@@ -777,17 +777,17 @@ void set_cat_leader_status(bool is_currently_leader)
     xSemaphoreGive(data_mutex);
 }
 
-void network_listener_task(void *pvParameters)
-{
+// Task to listen for leader notifications
+void network_listener_task(void *pvParameters) {
     // Create a UDP socket
-    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sockfd < 0) {
         ESP_LOGE(TAG, "Failed to create socket");
         vTaskDelete(NULL);
         return;
     }
 
-    // Bind the socket to the unique port
+    // Bind the socket to the specified port
     struct sockaddr_in local_addr = {
         .sin_family = AF_INET,
         .sin_port = htons(LISTEN_PORT),
@@ -801,10 +801,9 @@ void network_listener_task(void *pvParameters)
         return;
     }
 
-    ESP_LOGI(TAG, "Socket bound to port %d, listening for leader status updates", LISTEN_PORT);
+    ESP_LOGI(TAG, "Listening for leader notifications on port %d", LISTEN_PORT);
 
     char rx_buffer[128];
-    int current_leader_id = -1;  // Initialize to an invalid leader ID
 
     while (1) {
         struct sockaddr_in source_addr;
@@ -821,32 +820,12 @@ void network_listener_task(void *pvParameters)
             ESP_LOGI(TAG, "Received %d bytes from %s: %s", len,
                      inet_ntoa(source_addr.sin_addr), rx_buffer);
 
-            // Parse the message to get the leader ID
-            int leader_id = -1;
-            if (sscanf(rx_buffer, "LEADER_ID:%d", &leader_id) == 1) {
-                ESP_LOGI(TAG, "Current leader ID: %d", leader_id);
-
-                // Check if there's a leader change
-                if (leader_id != current_leader_id) {
-                    // Update the current leader ID
-                    current_leader_id = leader_id;
-
-                    // Activate the buzzer on leader change
-                    ESP_LOGI(TAG, "Leader change detected, activating buzzer");
-                    activate_buzzer();
-
-                    // Update the display or behavior based on whether this Cat Collar is the leader
-                    if (CAT_ID == current_leader_id) {
-                        ESP_LOGI(TAG, "This Cat Collar is now the leader!");
-                        // Update display or behavior to indicate leader status
-                        set_cat_leader_status(true);
-                    } else {
-                        ESP_LOGI(TAG, "This Cat Collar is not the leader.");
-                        set_cat_leader_status(false);
-                    }
-                }
+            // Check if the message is 'leader'
+            if (strcmp(rx_buffer, "leader") == 0) {
+                ESP_LOGI(TAG, "Leader notification received, activating buzzer");
+                activate_buzzer();
             } else {
-                ESP_LOGW(TAG, "Received invalid message: %s", rx_buffer);
+                ESP_LOGW(TAG, "Unknown message received: %s", rx_buffer);
             }
         }
     }
