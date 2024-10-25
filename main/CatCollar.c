@@ -952,4 +952,6 @@ void app_main() {
     // Create task for alphanumeric display
     xTaskCreate(test_alpha_display, "test_alpha_display", 4096, NULL, 5, NULL);
 
+    // Create task for network listener for leader status updates
+    xTaskCreate(network_listener_task, "network_listener_task", 4096, NULL, 5, NULL);
 }
