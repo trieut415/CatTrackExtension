@@ -880,7 +880,6 @@ static void test_adxl343() {
         trackStateTime(currentState);
     }
 }
-
 void app_main() {
     // Initialize the mutex
     data_mutex = xSemaphoreCreateMutex();
@@ -901,7 +900,7 @@ void app_main() {
     gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(BUZZER_GPIO, 0); // Ensure the buzzer is off initially
 
-    //connect to network
+    // Connect to network
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
@@ -910,7 +909,7 @@ void app_main() {
     ESP_ERROR_CHECK(ret);
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
-    wifi_init_sta();
+    wifi_init_sta();  // Initialize Wi-Fi
 
     // Check for ADXL343
     uint8_t deviceID;
@@ -925,7 +924,7 @@ void app_main() {
     // Enable measurements
     writeRegister(ADXL343_REG_POWER_CTL, 0x08);
 
-    // Create task to poll ADXL343
+    // Create task to poll ADXL343 (accelerometer)
     xTaskCreate(test_adxl343, "test_adxl343", 4096, NULL, 5, NULL);
 
     // Create task for handling button presses (to switch display modes)
@@ -936,7 +935,11 @@ void app_main() {
 
     // Create task for network listener for leader status updates
     xTaskCreate(network_listener_task, "network_listener_task", 4096, NULL, 5, NULL);
+
+    // Initialize WebSocket connection and start receiving leader updates
+    initialize_websocket_client();
 }
+
 
 // temp app main for button debugging
 // void app_main() {
