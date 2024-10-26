@@ -35,7 +35,7 @@
 #define BUTTON_GPIO GPIO_NUM_15
 
 // Buzzer GPIO
-#define BUZZER_GPIO GPIO_NUM_36
+#define BUZZER_GPIO GPIO_NUM_33
 
 // Master I2C
 #define I2C_MASTER_SCL_PIN                 22   // GPIO number for I2C CLK
@@ -80,7 +80,7 @@
 
 
 #define HOST_IP_ADDR "192.168.1.103"
-#define PORT 3333
+#define PORT 3335
 
 // cat collar definitions
 
@@ -202,7 +202,6 @@ void get_timestamp(char* buffer, size_t max_len) {
     snprintf(buffer, max_len, "%02d:%02d:%02d", hours, minutes, day_seconds);
 }
 
-// From ChatGPT
 void print_status() {
     char timestamp[16];
     get_timestamp(timestamp, sizeof(timestamp));
@@ -443,7 +442,7 @@ static const uint16_t alphafonttable[] =  {
     0b0000000000001111, //  ]
     0b0000110000000011, //  ^
     0b0000000000001000, //  _
-    0b0000000100000000, //  `
+    0b0000000100000000, //  
     0b0000000011011111, //  a
     0b0010000001111000, //  b
     0b0000000011011000, //  c
@@ -530,8 +529,6 @@ int set_brightness_max(uint8_t val) {
 }
 void test_alpha_display(void *arg)
 {
-    extern bool is_leader;
-    
     // Debug
     int ret;
     printf(">> Test Alphanumeric Display: \n");
@@ -791,7 +788,7 @@ void network_listener_task(void *pvParameters) {
     // Bind the socket to the specified port
     struct sockaddr_in local_addr = {
         .sin_family = AF_INET,
-        .sin_port = htons(LISTEN_PORT),
+        .sin_port = htons(PORT),
         .sin_addr.s_addr = htonl(INADDR_ANY),
     };
 
@@ -802,7 +799,7 @@ void network_listener_task(void *pvParameters) {
         return;
     }
 
-    ESP_LOGI(TAG, "Listening for leader notifications on port %d", LISTEN_PORT);
+    ESP_LOGI(TAG, "Listening for leader notifications on port %d", PORT);
 
     char rx_buffer[128];
 
@@ -824,7 +821,7 @@ void network_listener_task(void *pvParameters) {
             // Check if the message is 'leader'
             if (strcmp(rx_buffer, "leader") == 0) {
                 ESP_LOGI(TAG, "Leader notification received, activating buzzer");
-                activate_buzzer();
+                buzz();
             } else {
                 ESP_LOGW(TAG, "Unknown message received: %s", rx_buffer);
             }
@@ -899,6 +896,11 @@ void app_main() {
     gpio_reset_pin(BUTTON_GPIO);
     gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
 
+    // Initialize the buzzer GPIO
+    gpio_reset_pin(BUZZER_GPIO);
+    gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(BUZZER_GPIO, 0); // Ensure the buzzer is off initially
+
     //connect to network
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -935,3 +937,18 @@ void app_main() {
     // Create task for network listener for leader status updates
     xTaskCreate(network_listener_task, "network_listener_task", 4096, NULL, 5, NULL);
 }
+
+// temp app main for button debugging
+// void app_main() {
+//     // Initialize the buzzer GPIO
+//     gpio_reset_pin(BUZZER_GPIO);
+//     gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
+//     gpio_set_level(BUZZER_GPIO, 0); // Assuming active high
+
+//     while (1) {
+//         gpio_set_level(BUZZER_GPIO, 1); // Turn on
+//         vTaskDelay(1000 / portTICK_PERIOD_MS);
+//         gpio_set_level(BUZZER_GPIO, 0); // Turn off
+//         vTaskDelay(1000 / portTICK_PERIOD_MS);
+//     }
+// }
