@@ -202,6 +202,7 @@ void get_timestamp(char* buffer, size_t max_len) {
     snprintf(buffer, max_len, "%02d:%02d:%02d", hours, minutes, day_seconds);
 }
 
+// From ChatGPT
 void print_status() {
     char timestamp[16];
     get_timestamp(timestamp, sizeof(timestamp));
