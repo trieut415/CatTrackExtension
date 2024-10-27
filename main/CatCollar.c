@@ -987,7 +987,7 @@ void network_listener_task(void *pvParameters)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-n
+
 // function to get acceleration
 void getAccel(float *xp, float *yp, float *zp)
 {
