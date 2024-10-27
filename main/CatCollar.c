@@ -107,41 +107,49 @@ static int s_retry_num = 0;
 
 esp_websocket_client_handle_t client;
 bool isBuzzing = false;
-const char *catId = "1"; // Set this ID for each device (change for each tracker)
+const char *catId = "3"; // Set this ID for each device (change for each tracker)
 
 void buzz(bool isBuzzing)
 {
-    while (1)
+    if (isBuzzing)
     {
-        if (isBuzzing)
-        {
-            gpio_set_level(BUZZER_GPIO, 1); // Turn on the buzzer
-            vTaskDelay(500 / portTICK_PERIOD_MS); // Buzz for 500ms
-            gpio_set_level(BUZZER_GPIO, 0); // Turn off the buzzer
-            vTaskDelay(500 / portTICK_PERIOD_MS); // Pause for 500ms
-        }
-        else
-        {
-            // Ensure the buzzer is off
-            gpio_set_level(BUZZER_GPIO, 0);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-        }
+        gpio_set_level(BUZZER_GPIO, 1); // Turn on the buzzer
+        vTaskDelay(500 / portTICK_PERIOD_MS); // Buzz for 500ms
+        ESP_LOGI(TAG, "Buzzing on");
+        gpio_set_level(BUZZER_GPIO, 0); // Turn off the buzzer
+        vTaskDelay(500 / portTICK_PERIOD_MS); // Pause for 500ms
+    }
+    else
+    {
+        // Ensure the buzzer is off
+        gpio_set_level(BUZZER_GPIO, 0);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
 
+#define MAX_LEADER_ID_LEN 40  // Adjust as needed
+
 static void websocket_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
+
     switch (event_id)
     {
     case WEBSOCKET_EVENT_DATA:
         ESP_LOGI(TAG, "Received data: %.*s", data->data_len, (char *)data->data_ptr);
 
+        // Ensure data_len does not exceed buffer size - 1 for null terminator
+        if (data->data_len >= MAX_LEADER_ID_LEN) {
+            ESP_LOGE(TAG, "Received data length (%d) exceeds buffer size (%d)", data->data_len, MAX_LEADER_ID_LEN);
+            break;
+        }
+
         // Null-terminate the received data
-        char received_leader_id[10];
+        char received_leader_id[MAX_LEADER_ID_LEN];
         memcpy(received_leader_id, data->data_ptr, data->data_len);
         received_leader_id[data->data_len] = '\0';
+        ESP_LOGI(TAG, "Received leader ID: %s", received_leader_id);
 
         // Check if the received leader ID matches this device's catId
         if (strcmp(received_leader_id, catId) == 0)
@@ -159,9 +167,11 @@ static void websocket_event_handler(void *arg, esp_event_base_t event_base, int3
     case WEBSOCKET_EVENT_CONNECTED:
         ESP_LOGI(TAG, "WebSocket connected");
         break;
+
     case WEBSOCKET_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "WebSocket disconnected");
         break;
+
     default:
         break;
     }
@@ -175,8 +185,26 @@ static void initialize_websocket_client()
     };
 
     client = esp_websocket_client_init(&websocket_cfg);
-    esp_websocket_register_events(client, WEBSOCKET_EVENT_ANY, websocket_event_handler, (void *)client);
-    esp_websocket_client_start(client);
+    if (client == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize WebSocket client");
+        return;
+    }
+
+    esp_err_t ret = esp_websocket_register_events(client, WEBSOCKET_EVENT_ANY, websocket_event_handler, (void *)client);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register WebSocket events: %s", esp_err_to_name(ret));
+        esp_websocket_client_destroy(client);
+        return;
+    }
+
+    ret = esp_websocket_client_start(client);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start WebSocket client: %s", esp_err_to_name(ret));
+        esp_websocket_client_destroy(client);
+        return;
+    }
+
+    ESP_LOGI(TAG, "WebSocket client initialized and started");
 }
 
 static void event_handler(void *arg, esp_event_base_t event_base,
@@ -950,42 +978,16 @@ void network_listener_task(void *pvParameters)
 
     while (1)
     {
-        struct sockaddr_in source_addr;
-        socklen_t socklen = sizeof(source_addr);
-        int len = recvfrom(sockfd, rx_buffer, sizeof(rx_buffer) - 1, 0,
-                           (struct sockaddr *)&source_addr, &socklen);
-
-        if (len < 0)
-        {
-            ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-            break;
-        }
-        else
-        {
-            // Null-terminate the received data
-            rx_buffer[len] = 0;
-            ESP_LOGI(TAG, "Received %d bytes from %s: %s", len,
-                     inet_ntoa(source_addr.sin_addr), rx_buffer);
-
-            // Check if the message is 'leader'
-            if (strcmp(rx_buffer, "leader") == 0)
-            {
-                ESP_LOGI(TAG, "Leader notification received, activating buzzer");
-                buzz(isBuzzing);
-            }
-            else
-            {
-                ESP_LOGW(TAG, "Unknown message received: %s", rx_buffer);
-            }
-        }
+    buzz(isBuzzing);
     }
+
 
     close(sockfd);
     vTaskDelete(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
+n
 // function to get acceleration
 void getAccel(float *xp, float *yp, float *zp)
 {
@@ -1108,9 +1110,6 @@ void app_main()
 //     gpio_set_level(BUZZER_GPIO, 0); // Assuming active high
 
 //     while (1) {
-//         gpio_set_level(BUZZER_GPIO, 1); // Turn on
-//         vTaskDelay(1000 / portTICK_PERIOD_MS);
-//         gpio_set_level(BUZZER_GPIO, 0); // Turn off
-//         vTaskDelay(1000 / portTICK_PERIOD_MS);
+//         buzz(1);
 //     }
 // }
