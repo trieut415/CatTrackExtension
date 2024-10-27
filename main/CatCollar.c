@@ -6,7 +6,7 @@
 #include "driver/i2c.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
-#include "esp_adc/adc_oneshot.h"
+// #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_vfs_dev.h"
@@ -21,6 +21,8 @@
 #include "esp_event.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
+#include "esp_websocket_client.h"
+#include "esp_event.h"
 
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -28,7 +30,7 @@
 #include <lwip/netdb.h>
 
 #include "./ADXL343.h"
-#include <arpa/inet.h>  // For socket functions
+#include <arpa/inet.h> // For socket functions
 #include <unistd.h>
 
 // GPIO for button press
@@ -38,46 +40,45 @@
 #define BUZZER_GPIO GPIO_NUM_33
 
 // Master I2C
-#define I2C_MASTER_SCL_PIN                 22   // GPIO number for I2C CLK
-#define I2C_MASTER_SDA_PIN                 23   // GPIO number for I2C DATA
-#define I2C_EXAMPLE_MASTER_NUM             I2C_NUM_0  // i2c port
-#define I2C_EXAMPLE_MASTER_TX_BUF_DISABLE  0    // i2c master no buffer needed
-#define I2C_EXAMPLE_MASTER_RX_BUF_DISABLE  0    // i2c master no buffer needed
-#define I2C_EXAMPLE_MASTER_FREQ_HZ         100000     // i2c master clock freq
-#define WRITE_BIT                          I2C_MASTER_WRITE // i2c master write
-#define READ_BIT                           I2C_MASTER_READ  // i2c master read
-#define ACK_CHECK_EN                       true // i2c master will check ack
-#define ACK_CHECK_DIS                      false// i2c master will not check ack
-#define ACK_VAL                            0x00 // i2c ack value
+#define I2C_MASTER_SCL_PIN 22               // GPIO number for I2C CLK
+#define I2C_MASTER_SDA_PIN 23               // GPIO number for I2C DATA
+#define I2C_EXAMPLE_MASTER_NUM I2C_NUM_0    // i2c port
+#define I2C_EXAMPLE_MASTER_TX_BUF_DISABLE 0 // i2c master no buffer needed
+#define I2C_EXAMPLE_MASTER_RX_BUF_DISABLE 0 // i2c master no buffer needed
+#define I2C_EXAMPLE_MASTER_FREQ_HZ 100000   // i2c master clock freq
+#define WRITE_BIT I2C_MASTER_WRITE          // i2c master write
+#define READ_BIT I2C_MASTER_READ            // i2c master read
+#define ACK_CHECK_EN true                   // i2c master will check ack
+#define ACK_CHECK_DIS false                 // i2c master will not check ack
+#define ACK_VAL 0x00                        // i2c ack value
 
 // ADXL343
-#define SLAVE_ADXL                         ADXL343_ADDRESS // 0x53
-#define ACCEL_NACK_VAL                           0x01 // i2c nack value (Was FF)
+#define SLAVE_ADXL ADXL343_ADDRESS // 0x53
+#define ACCEL_NACK_VAL 0x01        // i2c nack value (Was FF)
 
 // 14-Segment Display
-#define SLAVE_DISPLAY                         0x70 // alphanumeric address
-#define OSC                                0x21 // oscillator cmd
-#define HT16K33_BLINK_DISPLAYON            0x01 // Display on cmd
-#define HT16K33_BLINK_OFF                  0    // Blink off cmd
-#define HT16K33_BLINK_CMD                  0x80 // Blink cmd
-#define HT16K33_CMD_BRIGHTNESS             0xE0 // Brightness cmd
+#define SLAVE_DISPLAY 0x70           // alphanumeric address
+#define OSC 0x21                     // oscillator cmd
+#define HT16K33_BLINK_DISPLAYON 0x01 // Display on cmd
+#define HT16K33_BLINK_OFF 0          // Blink off cmd
+#define HT16K33_BLINK_CMD 0x80       // Blink cmd
+#define HT16K33_CMD_BRIGHTNESS 0xE0  // Brightness cmd
 #define DISPLAY_NACK_VAL 0xFF
-#define MAX_MESSAGE_LENGTH    16    // Maximum number of characters in a message
-#define VISIBLE_CHARACTERS    4     // Number of characters visible on the display
-#define SCROLL_THRESHOLD      4     // Threshold to decide whether to scroll
+#define MAX_MESSAGE_LENGTH 16 // Maximum number of characters in a message
+#define VISIBLE_CHARACTERS 4  // Number of characters visible on the display
+#define SCROLL_THRESHOLD 4    // Threshold to decide whether to scroll
 
-#define UART_NUM UART_NUM_0  // Using UART0
-#define BUF_SIZE (1024)      // UART buffer size
+#define UART_NUM UART_NUM_0 // Using UART0
+#define BUF_SIZE (1024)     // UART buffer size
 
 /* The event group allows multiple bits for each event, but we only care about two events:
  * - we are connected to the AP with an IP
  * - we failed to connect after the maximum amount of retries */
 #define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT      BIT1
-#define EXAMPLE_ESP_WIFI_SSID      "Group_6"
-#define EXAMPLE_ESP_WIFI_PASS      "smartsys"
-#define EXAMPLE_ESP_MAXIMUM_RETRY  5
-
+#define WIFI_FAIL_BIT BIT1
+#define EXAMPLE_ESP_WIFI_SSID "Group_6"
+#define EXAMPLE_ESP_WIFI_PASS "smartsys"
+#define EXAMPLE_ESP_MAXIMUM_RETRY 5
 
 #define HOST_IP_ADDR "192.168.1.103"
 #define PORT 3335
@@ -86,14 +87,15 @@
 
 bool is_leader = false;
 
-typedef enum {
-    CAT_SLEEP = 0,       // Idle (sleeps on his back so roll & -Z)
-    CAT_WANDER = 1,      // Active (X > 1)
+typedef enum
+{
+    CAT_SLEEP = 0,         // Idle (sleeps on his back so roll & -Z)
+    CAT_WANDER = 1,        // Active (X > 1)
     CAT_SPEED_MOONWALK = 2 // Vertical position (Pitch > 80 & Z +/- 1)
 } CatState;
 
-CatState previousState = CAT_SLEEP;  // Initialize to CAT_SLEEP or another default state
-TickType_t stateStartTime = 0;  // Initialize to zero
+CatState previousState = CAT_SLEEP; // Initialize to CAT_SLEEP or another default state
+TickType_t stateStartTime = 0;      // Initialize to zero
 CatState current_cat_state = CAT_SLEEP;
 SemaphoreHandle_t data_mutex;
 int64_t reset_time = 0;
@@ -103,22 +105,104 @@ static const char *TAG = "wifi station";
 
 static int s_retry_num = 0;
 
-static void event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
+esp_websocket_client_handle_t client;
+bool isBuzzing = false;
+const char *catId = "1"; // Set this ID for each device (change for each tracker)
+
+void buzz(bool isBuzzing)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+    while (1)
+    {
+        if (isBuzzing)
+        {
+            gpio_set_level(BUZZER_GPIO, 1); // Turn on the buzzer
+            vTaskDelay(500 / portTICK_PERIOD_MS); // Buzz for 500ms
+            gpio_set_level(BUZZER_GPIO, 0); // Turn off the buzzer
+            vTaskDelay(500 / portTICK_PERIOD_MS); // Pause for 500ms
+        }
+        else
+        {
+            // Ensure the buzzer is off
+            gpio_set_level(BUZZER_GPIO, 0);
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
+    }
+}
+
+
+static void websocket_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
+    switch (event_id)
+    {
+    case WEBSOCKET_EVENT_DATA:
+        ESP_LOGI(TAG, "Received data: %.*s", data->data_len, (char *)data->data_ptr);
+
+        // Null-terminate the received data
+        char received_leader_id[10];
+        memcpy(received_leader_id, data->data_ptr, data->data_len);
+        received_leader_id[data->data_len] = '\0';
+
+        // Check if the received leader ID matches this device's catId
+        if (strcmp(received_leader_id, catId) == 0)
+        {
+            isBuzzing = true; // Start buzzing if this device is the leader
+            ESP_LOGI(TAG, "This device is the leader. Buzzing started.");
+        }
+        else
+        {
+            isBuzzing = false; // Stop buzzing if another cat is the leader
+            ESP_LOGI(TAG, "This device is not the leader. Buzzing stopped.");
+        }
+        break;
+
+    case WEBSOCKET_EVENT_CONNECTED:
+        ESP_LOGI(TAG, "WebSocket connected");
+        break;
+    case WEBSOCKET_EVENT_DISCONNECTED:
+        ESP_LOGI(TAG, "WebSocket disconnected");
+        break;
+    default:
+        break;
+    }
+}
+
+
+static void initialize_websocket_client()
+{
+    esp_websocket_client_config_t websocket_cfg = {
+        .uri = "ws://192.168.1.103:3000/buzz", // Replace with your Raspberry Pi IP and correct port
+    };
+
+    client = esp_websocket_client_init(&websocket_cfg);
+    esp_websocket_register_events(client, WEBSOCKET_EVENT_ANY, websocket_event_handler, (void *)client);
+    esp_websocket_client_start(client);
+}
+
+static void event_handler(void *arg, esp_event_base_t event_base,
+                          int32_t event_id, void *event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
+    {
         esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
+    }
+    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
+    {
+        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
+        {
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGI(TAG, "retry to connect to the AP");
-        } else {
+        }
+        else
+        {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
-        ESP_LOGI(TAG,"connect to the AP fail");
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "connect to the AP fail");
+    }
+    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
+    {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -161,29 +245,34 @@ void wifi_init_sta(void)
              */
         },
     };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 
     /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
      * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            portMAX_DELAY);
+                                           WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                           pdFALSE,
+                                           pdFALSE,
+                                           portMAX_DELAY);
 
     /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
      * happened. */
-    if (bits & WIFI_CONNECTED_BIT) {
+    if (bits & WIFI_CONNECTED_BIT)
+    {
         ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
                  EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
-    } else if (bits & WIFI_FAIL_BIT) {
+    }
+    else if (bits & WIFI_FAIL_BIT)
+    {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
                  EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }
 }
@@ -191,7 +280,8 @@ void wifi_init_sta(void)
 float roll = 0, pitch = 0, x = 0, y = 0, z = 0;
 
 // Function to get the current time as a string
-void get_timestamp(char* buffer, size_t max_len) {
+void get_timestamp(char *buffer, size_t max_len)
+{
     int64_t current_time = esp_timer_get_time();
     int64_t time_us = current_time - reset_time;
     int64_t seconds = time_us / 1000000;
@@ -202,20 +292,21 @@ void get_timestamp(char* buffer, size_t max_len) {
     snprintf(buffer, max_len, "%02d:%02d:%02d", hours, minutes, day_seconds);
 }
 
-void print_status() {
+void print_status()
+{
     char timestamp[16];
     get_timestamp(timestamp, sizeof(timestamp));
 
-    const char* state_str = (current_cat_state == CAT_SLEEP) ? "Sleepy Time" :
-                            (current_cat_state == CAT_WANDER) ? "Wander Time" :
-                            "Moonwalk Time";
+    const char *state_str = (current_cat_state == CAT_SLEEP) ? "Sleepy Time" : (current_cat_state == CAT_WANDER) ? "Wander Time"
+                                                                                                                 : "Moonwalk Time";
 
     char message[64]; // Buffer for the message
     snprintf(message, sizeof(message), "%s, Cat state: %s\n", timestamp, state_str);
 
     // Create a UDP socket
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
+    if (sockfd < 0)
+    {
         perror("Socket creation failed");
         return;
     }
@@ -229,8 +320,9 @@ void print_status() {
 
     // Send the message
     ssize_t sent_bytes = sendto(sockfd, message, strlen(message), 0,
-                                 (struct sockaddr*)&server_addr, sizeof(server_addr));
-    if (sent_bytes < 0) {
+                                (struct sockaddr *)&server_addr, sizeof(server_addr));
+    if (sent_bytes < 0)
+    {
         perror("Failed to send message");
     }
 
@@ -239,8 +331,8 @@ void print_status() {
 }
 
 // UART configuration parameters
-#define UART_NUM UART_NUM_0  // Using UART0
-#define BUF_SIZE (1024)      // UART buffer size
+#define UART_NUM UART_NUM_0 // Using UART0
+#define BUF_SIZE (1024)     // UART buffer size
 
 void init_uart()
 {
@@ -251,133 +343,155 @@ void init_uart()
     esp_vfs_dev_uart_use_driver(UART_NUM);
 }
 
-CatState getCatState(float roll, float pitch, float x, float z, float y) {
+CatState getCatState(float roll, float pitch, float x, float z, float y)
+{
     // CAT_SLEEP: if roll is significant and Z is close to -1 (cat on its back)
-    if (fabs(z) < 11 && fabs(y) < 2.0 && fabs(x) < 2.0) {
+    if (fabs(z) < 11 && fabs(y) < 2.0 && fabs(x) < 2.0)
+    {
         return CAT_SLEEP;
     }
     // CAT_WANDER: if X-axis acceleration is greater than 1 (cat is moving)
-    else if ((fabs(x) > 2.0 || fabs(y) > 2.0) && fabs(pitch) < 70) {
+    else if ((fabs(x) > 2.0 || fabs(y) > 2.0) && fabs(pitch) < 70)
+    {
         return CAT_WANDER;
     }
-    else if (fabs(pitch) >= 70) {
+    else if (fabs(pitch) >= 70)
+    {
         return CAT_SPEED_MOONWALK;
     }
     return CAT_SLEEP;
 }
 
 // Function to track time and cat state, and print them on the same line
-void trackStateTime(CatState currentState) {
-    if (currentState != current_cat_state) {
+void trackStateTime(CatState currentState)
+{
+    if (currentState != current_cat_state)
+    {
         // Lock the mutex and update the cat state
         xSemaphoreTake(data_mutex, portMAX_DELAY);
         CatState prev_state = current_cat_state;
         current_cat_state = currentState;
-        print_status();  // Print time and cat state on the same line
-        if(prev_state != current_cat_state){
+        print_status(); // Print time and cat state on the same line
+        if (prev_state != current_cat_state)
+        {
             reset_time = esp_timer_get_time();
         }
         xSemaphoreGive(data_mutex);
     }
 }
 
-
 // Button Logic
 
 // Global variable to track the display mode
-int display_mode = 0;  // Start with mode 1 by default
+int display_mode = 0; // Start with mode 1 by default
 
 void task_button_presses(void *pvParameters)
 {
-    int lastButtonState = 1;  // Previous state of the button
+    int lastButtonState = 1; // Previous state of the button
 
-    while (1) {
+    while (1)
+    {
         // Read the current button state
         int currentState = gpio_get_level(BUTTON_GPIO);
 
         // Detect if the button is pressed (transition from HIGH to LOW)
-        if (currentState == 0 && lastButtonState == 1) {
+        if (currentState == 0 && lastButtonState == 1)
+        {
 
             // Cycle through display modes (1, 2, 3)
-            display_mode = (display_mode+1)%3;
+            display_mode = (display_mode + 1) % 3;
         }
 
         // Update last button state for debounce handling
         lastButtonState = currentState;
 
-        vTaskDelay(10 / portTICK_PERIOD_MS);  // Small delay to avoid bouncing
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Small delay to avoid bouncing
     }
 }
 
-
 // Function to initiate i2c -- note the MSB declaration!
-static void i2c_master_init(){
-  // Debug
+static void i2c_master_init()
+{
+    // Debug
 
-  printf("\n>> i2c Config\n");
+    printf("\n>> i2c Config\n");
 
-  int err;
+    int err;
 
-  // Port configuration
-  int i2c_master_port = I2C_EXAMPLE_MASTER_NUM;
+    // Port configuration
+    int i2c_master_port = I2C_EXAMPLE_MASTER_NUM;
 
-  /// Define I2C configurations
-  i2c_config_t conf = {0};
-  conf.mode = I2C_MODE_MASTER;                              // Master mode
-  conf.sda_io_num = I2C_MASTER_SDA_PIN;              // Default SDA pin
-  conf.sda_pullup_en = GPIO_PULLUP_ENABLE;                  // Internal pullup
-  conf.scl_io_num = I2C_MASTER_SCL_PIN;              // Default SCL pin
-  conf.scl_pullup_en = GPIO_PULLUP_ENABLE;                  // Internal pullup
-  conf.master.clk_speed = I2C_EXAMPLE_MASTER_FREQ_HZ;       // CLK frequency
-  err = i2c_param_config(i2c_master_port, &conf);           // Configure
-  if (err == ESP_OK) {printf("- parameters: ok\n");}
+    /// Define I2C configurations
+    i2c_config_t conf = {0};
+    conf.mode = I2C_MODE_MASTER;                        // Master mode
+    conf.sda_io_num = I2C_MASTER_SDA_PIN;               // Default SDA pin
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;            // Internal pullup
+    conf.scl_io_num = I2C_MASTER_SCL_PIN;               // Default SCL pin
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;            // Internal pullup
+    conf.master.clk_speed = I2C_EXAMPLE_MASTER_FREQ_HZ; // CLK frequency
+    err = i2c_param_config(i2c_master_port, &conf);     // Configure
+    if (err == ESP_OK)
+    {
+        printf("- parameters: ok\n");
+    }
 
-  // Install I2C driver
-  err = i2c_driver_install(i2c_master_port, conf.mode,
-                     I2C_EXAMPLE_MASTER_RX_BUF_DISABLE,
-                     I2C_EXAMPLE_MASTER_TX_BUF_DISABLE, 0);
-  if (err == ESP_OK) {printf("- initialized: yes\n");}
+    // Install I2C driver
+    err = i2c_driver_install(i2c_master_port, conf.mode,
+                             I2C_EXAMPLE_MASTER_RX_BUF_DISABLE,
+                             I2C_EXAMPLE_MASTER_TX_BUF_DISABLE, 0);
+    if (err == ESP_OK)
+    {
+        printf("- initialized: yes\n");
+    }
 
-  // Data in MSB mode
-  i2c_set_data_mode(i2c_master_port, I2C_DATA_MODE_MSB_FIRST, I2C_DATA_MODE_MSB_FIRST);
+    // Data in MSB mode
+    i2c_set_data_mode(i2c_master_port, I2C_DATA_MODE_MSB_FIRST, I2C_DATA_MODE_MSB_FIRST);
 }
 
 // Utility  Functions //////////////////////////////////////////////////////////
 
 // Utility function to test for I2C device address -- not used in deploy
-int testConnection(uint8_t devAddr, int32_t timeout) {
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (devAddr << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);
-  i2c_master_stop(cmd);
-  int err = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
-  i2c_cmd_link_delete(cmd);
-  return err;
+int testConnection(uint8_t devAddr, int32_t timeout)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (devAddr << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);
+    i2c_master_stop(cmd);
+    int err = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd);
+    return err;
 }
 
 // Utility function to scan for i2c device
-static void i2c_scanner() {
-  int32_t scanTimeout = 1000;
-  printf("\n>> I2C scanning ..."  "\n");
-  uint8_t count = 0;
-  for (uint8_t i = 1; i < 127; i++) {
-    // printf("0x%X%s",i,"\n");
-    if (testConnection(i, scanTimeout) == ESP_OK) {
-      printf( "- Device found at address: 0x%X%s", i, "\n");
-      count++;
+static void i2c_scanner()
+{
+    int32_t scanTimeout = 1000;
+    printf("\n>> I2C scanning ..."
+           "\n");
+    uint8_t count = 0;
+    for (uint8_t i = 1; i < 127; i++)
+    {
+        // printf("0x%X%s",i,"\n");
+        if (testConnection(i, scanTimeout) == ESP_OK)
+        {
+            printf("- Device found at address: 0x%X%s", i, "\n");
+            count++;
+        }
     }
-  }
-  if (count == 0) {printf("- No I2C devices found!" "\n");}
+    if (count == 0)
+    {
+        printf("- No I2C devices found!"
+               "\n");
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Display Functions ///////////////////////////////////////////////////////////
 
-
 // Font Table
 // Updated Font Table from Adafruit's Library
-static const uint16_t alphafonttable[] =  {
+static const uint16_t alphafonttable[] = {
     0b0000000000000000, //  (space)
     0b0000000000000110, //  !
     0b0000001000100000, //  "
@@ -442,7 +556,7 @@ static const uint16_t alphafonttable[] =  {
     0b0000000000001111, //  ]
     0b0000110000000011, //  ^
     0b0000000000001000, //  _
-    0b0000000100000000, //  
+    0b0000000100000000, //
     0b0000000011011111, //  a
     0b0010000001111000, //  b
     0b0000000011011000, //  c
@@ -476,56 +590,63 @@ static const uint16_t alphafonttable[] =  {
     0b0011111111111111, //  DEL
 };
 
-//AI Generated
-// Function to map a character to its 16-bit code
-uint16_t encode_character(char c) {
-    if (c >= ' ' && c <= '~') {
+// AI Generated
+//  Function to map a character to its 16-bit code
+uint16_t encode_character(char c)
+{
+    if (c >= ' ' && c <= '~')
+    {
         return alphafonttable[c - ' '];
-    } else {
-        return 0x0000;  // For unsupported characters, use 0x0000
+    }
+    else
+    {
+        return 0x0000; // For unsupported characters, use 0x0000
     }
 }
 
 // Turn on oscillator for alpha display
-int alpha_oscillator() {
-  int ret;
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, ( SLAVE_DISPLAY << 1 ) | WRITE_BIT, ACK_CHECK_EN);
-  i2c_master_write_byte(cmd, OSC, ACK_CHECK_EN);
-  i2c_master_stop(cmd);
-  ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
-  i2c_cmd_link_delete(cmd);
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  return ret;
+int alpha_oscillator()
+{
+    int ret;
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (SLAVE_DISPLAY << 1) | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, OSC, ACK_CHECK_EN);
+    i2c_master_stop(cmd);
+    ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
+    return ret;
 }
 
 // Set blink rate to off
-int no_blink() {
-  int ret;
-  i2c_cmd_handle_t cmd2 = i2c_cmd_link_create();
-  i2c_master_start(cmd2);
-  i2c_master_write_byte(cmd2, ( SLAVE_DISPLAY << 1 ) | WRITE_BIT, ACK_CHECK_EN);
-  i2c_master_write_byte(cmd2, HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (HT16K33_BLINK_OFF << 1), ACK_CHECK_EN);
-  i2c_master_stop(cmd2);
-  ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd2, 1000 / portTICK_PERIOD_MS);
-  i2c_cmd_link_delete(cmd2);
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  return ret;
+int no_blink()
+{
+    int ret;
+    i2c_cmd_handle_t cmd2 = i2c_cmd_link_create();
+    i2c_master_start(cmd2);
+    i2c_master_write_byte(cmd2, (SLAVE_DISPLAY << 1) | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd2, HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (HT16K33_BLINK_OFF << 1), ACK_CHECK_EN);
+    i2c_master_stop(cmd2);
+    ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd2, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd2);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
+    return ret;
 }
 
 // Set Brightness
-int set_brightness_max(uint8_t val) {
-  int ret;
-  i2c_cmd_handle_t cmd3 = i2c_cmd_link_create();
-  i2c_master_start(cmd3);
-  i2c_master_write_byte(cmd3, ( SLAVE_DISPLAY << 1 ) | WRITE_BIT, ACK_CHECK_EN);
-  i2c_master_write_byte(cmd3, HT16K33_CMD_BRIGHTNESS | val, ACK_CHECK_EN);
-  i2c_master_stop(cmd3);
-  ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd3, 1000 / portTICK_PERIOD_MS);
-  i2c_cmd_link_delete(cmd3);
-  vTaskDelay(200 / portTICK_PERIOD_MS);
-  return ret;
+int set_brightness_max(uint8_t val)
+{
+    int ret;
+    i2c_cmd_handle_t cmd3 = i2c_cmd_link_create();
+    i2c_master_start(cmd3);
+    i2c_master_write_byte(cmd3, (SLAVE_DISPLAY << 1) | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd3, HT16K33_CMD_BRIGHTNESS | val, ACK_CHECK_EN);
+    i2c_master_stop(cmd3);
+    ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd3, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd3);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
+    return ret;
 }
 void test_alpha_display(void *arg)
 {
@@ -534,36 +655,56 @@ void test_alpha_display(void *arg)
     printf(">> Test Alphanumeric Display: \n");
 
     // Set up routines
-    ret = alpha_oscillator();  // Turn on alpha oscillator
-    if (ret == ESP_OK) { printf("- oscillator: ok \n"); }
-    ret = no_blink();  // Set display blink off
-    if (ret == ESP_OK) { printf("- blink: off \n"); }
-    ret = set_brightness_max(0xF);  // Set brightness to max
-    if (ret == ESP_OK) { printf("- brightness: max \n"); }
+    ret = alpha_oscillator(); // Turn on alpha oscillator
+    if (ret == ESP_OK)
+    {
+        printf("- oscillator: ok \n");
+    }
+    ret = no_blink(); // Set display blink off
+    if (ret == ESP_OK)
+    {
+        printf("- blink: off \n");
+    }
+    ret = set_brightness_max(0xF); // Set brightness to max
+    if (ret == ESP_OK)
+    {
+        printf("- brightness: max \n");
+    }
 
     uint16_t displaybuffer[VISIBLE_CHARACTERS];
-    
-    // Declare the message buffer here so it's available throughout the function
-    char message[MAX_MESSAGE_LENGTH + 1];  // Buffer to store the message
 
-    while (1) {
+    // Declare the message buffer here so it's available throughout the function
+    char message[MAX_MESSAGE_LENGTH + 1]; // Buffer to store the message
+
+    while (1)
+    {
         // Prepare the message based on the current display mode
-        if (display_mode == 0) {
+        if (display_mode == 0)
+        {
             snprintf(message, MAX_MESSAGE_LENGTH + 1, "Boots and Cats");
-        } else if (display_mode == 1) {
+        }
+        else if (display_mode == 1)
+        {
             // Use current sensor data to set the message
-            CatState currentState = getCatState(roll, pitch, x, z, y);  // Ensure you update roll, pitch, x, y, z in your main task
+            CatState currentState = getCatState(roll, pitch, x, z, y); // Ensure you update roll, pitch, x, y, z in your main task
             trackStateTime(currentState);
-            if (currentState == CAT_SLEEP) {
+            if (currentState == CAT_SLEEP)
+            {
                 snprintf(message, MAX_MESSAGE_LENGTH + 1, "Sleepy Time");
-            } else if (currentState == CAT_WANDER) {
+            }
+            else if (currentState == CAT_WANDER)
+            {
                 snprintf(message, MAX_MESSAGE_LENGTH + 1, "Wander Time");
-            } else if (currentState == CAT_SPEED_MOONWALK) {
+            }
+            else if (currentState == CAT_SPEED_MOONWALK)
+            {
                 snprintf(message, MAX_MESSAGE_LENGTH + 1, "Moonwalk Time");
             }
-        } else if (display_mode == 2) {
+        }
+        else if (display_mode == 2)
+        {
             int64_t current_time = esp_timer_get_time();
-            int64_t time_us = current_time - reset_time;  // Calculate elapsed time in ticks
+            int64_t time_us = current_time - reset_time; // Calculate elapsed time in ticks
             // upload to canvas JS
             float elapsedTimeSeconds = time_us / 1000000.0f; // Convert to seconds
 
@@ -576,42 +717,52 @@ void test_alpha_display(void *arg)
 
         // Determine the message length
         size_t message_length = strlen(message);
-        if (message_length > MAX_MESSAGE_LENGTH) {
+        if (message_length > MAX_MESSAGE_LENGTH)
+        {
             message_length = MAX_MESSAGE_LENGTH;
             message[MAX_MESSAGE_LENGTH] = '\0'; // Truncate the message if needed
             printf("Message truncated to 16 characters.\n");
         }
 
-        if (message_length <= SCROLL_THRESHOLD) {
+        if (message_length <= SCROLL_THRESHOLD)
+        {
             memset(displaybuffer, 0x0000, sizeof(displaybuffer));
 
             // Convert message characters to 16-bit codes
-            for (int i = 0; i < message_length && i < VISIBLE_CHARACTERS; i++) {
+            for (int i = 0; i < message_length && i < VISIBLE_CHARACTERS; i++)
+            {
                 displaybuffer[i] = encode_character(message[i]);
             }
 
             // Send characters to display over I2C
             i2c_cmd_handle_t cmd4 = i2c_cmd_link_create();
             i2c_master_start(cmd4);
-            i2c_master_write_byte(cmd4, ( SLAVE_DISPLAY << 1 ) | WRITE_BIT, ACK_CHECK_EN);
+            i2c_master_write_byte(cmd4, (SLAVE_DISPLAY << 1) | WRITE_BIT, ACK_CHECK_EN);
             i2c_master_write_byte(cmd4, (uint8_t)0x00, ACK_CHECK_EN);
-            for (uint8_t i = 0; i < VISIBLE_CHARACTERS; i++) {
+            for (uint8_t i = 0; i < VISIBLE_CHARACTERS; i++)
+            {
                 i2c_master_write_byte(cmd4, displaybuffer[i] & 0xFF, ACK_CHECK_EN);
                 i2c_master_write_byte(cmd4, displaybuffer[i] >> 8, ACK_CHECK_EN);
             }
             i2c_master_stop(cmd4);
             ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd4, 1000 / portTICK_PERIOD_MS);
             i2c_cmd_link_delete(cmd4);
-        } else {
+        }
+        else
+        {
             // Handle scrolling messages longer than 4 characters
             size_t total_length = message_length + VISIBLE_CHARACTERS;
             uint16_t message_buffer[total_length];
 
             // Initialize message buffer with spaces
-            for (size_t i = 0; i < total_length; i++) {
-                if (i < VISIBLE_CHARACTERS || i >= VISIBLE_CHARACTERS + message_length) {
+            for (size_t i = 0; i < total_length; i++)
+            {
+                if (i < VISIBLE_CHARACTERS || i >= VISIBLE_CHARACTERS + message_length)
+                {
                     message_buffer[i] = encode_character(' ');
-                } else {
+                }
+                else
+                {
                     message_buffer[i] = encode_character(message[i - VISIBLE_CHARACTERS]);
                 }
             }
@@ -619,18 +770,21 @@ void test_alpha_display(void *arg)
             int offset = 0;
 
             // Scroll the message
-            while (offset < total_length - VISIBLE_CHARACTERS + 1) {
+            while (offset < total_length - VISIBLE_CHARACTERS + 1)
+            {
                 // Update displaybuffer with VISIBLE_CHARACTERS starting from offset
-                for (int i = 0; i < VISIBLE_CHARACTERS; i++) {
+                for (int i = 0; i < VISIBLE_CHARACTERS; i++)
+                {
                     displaybuffer[i] = message_buffer[offset + i];
                 }
 
                 // Send characters to display over I2C
                 i2c_cmd_handle_t cmd4 = i2c_cmd_link_create();
                 i2c_master_start(cmd4);
-                i2c_master_write_byte(cmd4, ( SLAVE_DISPLAY << 1 ) | WRITE_BIT, ACK_CHECK_EN);
+                i2c_master_write_byte(cmd4, (SLAVE_DISPLAY << 1) | WRITE_BIT, ACK_CHECK_EN);
                 i2c_master_write_byte(cmd4, (uint8_t)0x00, ACK_CHECK_EN);
-                for (uint8_t i = 0; i < VISIBLE_CHARACTERS; i++) {
+                for (uint8_t i = 0; i < VISIBLE_CHARACTERS; i++)
+                {
                     i2c_master_write_byte(cmd4, displaybuffer[i] & 0xFF, ACK_CHECK_EN);
                     i2c_master_write_byte(cmd4, displaybuffer[i] >> 8, ACK_CHECK_EN);
                 }
@@ -646,9 +800,10 @@ void test_alpha_display(void *arg)
             memset(displaybuffer, 0x0000, sizeof(displaybuffer));
             i2c_cmd_handle_t cmd_clear = i2c_cmd_link_create();
             i2c_master_start(cmd_clear);
-            i2c_master_write_byte(cmd_clear, ( SLAVE_DISPLAY << 1 ) | WRITE_BIT, ACK_CHECK_EN);
+            i2c_master_write_byte(cmd_clear, (SLAVE_DISPLAY << 1) | WRITE_BIT, ACK_CHECK_EN);
             i2c_master_write_byte(cmd_clear, (uint8_t)0x00, ACK_CHECK_EN);
-            for (uint8_t i = 0; i < VISIBLE_CHARACTERS; i++) {
+            for (uint8_t i = 0; i < VISIBLE_CHARACTERS; i++)
+            {
                 i2c_master_write_byte(cmd_clear, displaybuffer[i] & 0xFF, ACK_CHECK_EN);
                 i2c_master_write_byte(cmd_clear, displaybuffer[i] >> 8, ACK_CHECK_EN);
             }
@@ -662,57 +817,59 @@ void test_alpha_display(void *arg)
     }
 }
 
-
-
 // ADXL343 Functions ///////////////////////////////////////////////////////////
 
 // Get Device ID
-int getDeviceID(uint8_t *data) {
-  int ret;
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, ( SLAVE_ADXL << 1 ) | WRITE_BIT, ACK_CHECK_EN);
-  i2c_master_write_byte(cmd, ADXL343_REG_DEVID, ACK_CHECK_EN);
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, ( SLAVE_ADXL << 1 ) | READ_BIT, ACK_CHECK_EN);
-  i2c_master_read_byte(cmd, data, ACK_CHECK_DIS);
-  i2c_master_stop(cmd);
-  ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
-  i2c_cmd_link_delete(cmd);
-  return ret;
+int getDeviceID(uint8_t *data)
+{
+    int ret;
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, ADXL343_REG_DEVID, ACK_CHECK_EN);
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | READ_BIT, ACK_CHECK_EN);
+    i2c_master_read_byte(cmd, data, ACK_CHECK_DIS);
+    i2c_master_stop(cmd);
+    ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd);
+    return ret;
 }
 
 // Write one byte to register
-int writeRegister(uint8_t reg, uint8_t data) {
+int writeRegister(uint8_t reg, uint8_t data)
+{
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);  // Device address + Write
-    i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);  // Register address
-    i2c_master_write_byte(cmd, data, ACK_CHECK_EN);  // Data to write
+    i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN); // Device address + Write
+    i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);                                  // Register address
+    i2c_master_write_byte(cmd, data, ACK_CHECK_EN);                                 // Data to write
     i2c_master_stop(cmd);
-    int ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);  // Execute
+    int ret = i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS); // Execute
     i2c_cmd_link_delete(cmd);
-    return ret;  // Return result
+    return ret; // Return result
 }
 
 // Read register
-uint8_t readRegister(uint8_t reg) {
-  uint8_t data;
-  i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-  i2c_master_start(cmd);
-  i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN);  // Write device address
-  i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);  // Send register address
-  i2c_master_start(cmd);  // Repeat start
-  i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | I2C_MASTER_READ, ACK_CHECK_EN);  // Device address + read
-  i2c_master_read_byte(cmd, &data, I2C_MASTER_NACK);  // Read data
-  i2c_master_stop(cmd);
-  i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);  // Execute command
-  i2c_cmd_link_delete(cmd);
-  return data;  // Return the byte read
+uint8_t readRegister(uint8_t reg)
+{
+    uint8_t data;
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | I2C_MASTER_WRITE, ACK_CHECK_EN); // Write device address
+    i2c_master_write_byte(cmd, reg, ACK_CHECK_EN);                                  // Send register address
+    i2c_master_start(cmd);                                                          // Repeat start
+    i2c_master_write_byte(cmd, (SLAVE_ADXL << 1) | I2C_MASTER_READ, ACK_CHECK_EN);  // Device address + read
+    i2c_master_read_byte(cmd, &data, I2C_MASTER_NACK);                              // Read data
+    i2c_master_stop(cmd);
+    i2c_master_cmd_begin(I2C_EXAMPLE_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS); // Execute command
+    i2c_cmd_link_delete(cmd);
+    return data; // Return the byte read
 }
 
 // read 16 bits (2 bytes)
-int16_t read16(uint8_t reg) {
+int16_t read16(uint8_t reg)
+{
     uint8_t reg1, reg2;
     reg1 = readRegister(reg);
     reg2 = readRegister(reg + 1);
@@ -720,49 +877,34 @@ int16_t read16(uint8_t reg) {
     return result;
 }
 
-void setRange(range_t range) {
-  /* Red the data format register to preserve bits */
-  uint8_t format = readRegister(ADXL343_REG_DATA_FORMAT);
+void setRange(range_t range)
+{
+    /* Red the data format register to preserve bits */
+    uint8_t format = readRegister(ADXL343_REG_DATA_FORMAT);
 
-  /* Update the data rate */
-  format &= ~0x0F;
-  format |= range;
+    /* Update the data rate */
+    format &= ~0x0F;
+    format |= range;
 
-  /* Make sure that the FULL-RES bit is enabled for range scaling */
-  format |= 0x08;
+    /* Make sure that the FULL-RES bit is enabled for range scaling */
+    format |= 0x08;
 
-  /* Write the register back to the IC */
-  writeRegister(ADXL343_REG_DATA_FORMAT, format);
-
+    /* Write the register back to the IC */
+    writeRegister(ADXL343_REG_DATA_FORMAT, format);
 }
 
-range_t getRange(void) {
-  /* Red the data format register to preserve bits */
-  return (range_t)(readRegister(ADXL343_REG_DATA_FORMAT) & 0x03);
+range_t getRange(void)
+{
+    /* Red the data format register to preserve bits */
+    return (range_t)(readRegister(ADXL343_REG_DATA_FORMAT) & 0x03);
 }
 
-dataRate_t getDataRate(void) {
-  return (dataRate_t)(readRegister(ADXL343_REG_BW_RATE) & 0x0F);
+dataRate_t getDataRate(void)
+{
+    return (dataRate_t)(readRegister(ADXL343_REG_BW_RATE) & 0x0F);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-void buzz(){
-    static int64_t last_buzz_time = 0;
-    int64_t current_time = esp_timer_get_time();
-
-    if (current_time - last_buzz_time > 5000000) {
-        last_buzz_time = current_time;
-        
-        // Turn on the buzzer
-        gpio_set_level(BUZZER_GPIO, 1);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-        // Turn off the buzzer
-        gpio_set_level(BUZZER_GPIO, 0);
-    } else {
-        ESP_LOGI(TAG, "Buzzer activation skipped to prevent rapid triggering");
-    }
-}
 
 void set_cat_leader_status(bool is_currently_leader)
 {
@@ -776,10 +918,12 @@ void set_cat_leader_status(bool is_currently_leader)
 }
 
 // Task to listen for leader notifications
-void network_listener_task(void *pvParameters) {
+void network_listener_task(void *pvParameters)
+{
     // Create a UDP socket
     int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sockfd < 0) {
+    if (sockfd < 0)
+    {
         ESP_LOGE(TAG, "Failed to create socket");
         vTaskDelete(NULL);
         return;
@@ -792,7 +936,8 @@ void network_listener_task(void *pvParameters) {
         .sin_addr.s_addr = htonl(INADDR_ANY),
     };
 
-    if (bind(sockfd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
+    if (bind(sockfd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
+    {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         close(sockfd);
         vTaskDelete(NULL);
@@ -803,26 +948,33 @@ void network_listener_task(void *pvParameters) {
 
     char rx_buffer[128];
 
-    while (1) {
+    while (1)
+    {
         struct sockaddr_in source_addr;
         socklen_t socklen = sizeof(source_addr);
         int len = recvfrom(sockfd, rx_buffer, sizeof(rx_buffer) - 1, 0,
                            (struct sockaddr *)&source_addr, &socklen);
 
-        if (len < 0) {
+        if (len < 0)
+        {
             ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
             break;
-        } else {
+        }
+        else
+        {
             // Null-terminate the received data
             rx_buffer[len] = 0;
             ESP_LOGI(TAG, "Received %d bytes from %s: %s", len,
                      inet_ntoa(source_addr.sin_addr), rx_buffer);
 
             // Check if the message is 'leader'
-            if (strcmp(rx_buffer, "leader") == 0) {
+            if (strcmp(rx_buffer, "leader") == 0)
+            {
                 ESP_LOGI(TAG, "Leader notification received, activating buzzer");
-                buzz();
-            } else {
+                buzz(isBuzzing);
+            }
+            else
+            {
                 ESP_LOGW(TAG, "Unknown message received: %s", rx_buffer);
             }
         }
@@ -835,24 +987,28 @@ void network_listener_task(void *pvParameters) {
 ////////////////////////////////////////////////////////////////////////////////
 
 // function to get acceleration
-void getAccel(float * xp, float *yp, float *zp) {
-  *xp = read16(ADXL343_REG_DATAX0) * ADXL343_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
-  *yp = read16(ADXL343_REG_DATAY0) * ADXL343_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
-  *zp = read16(ADXL343_REG_DATAZ0) * ADXL343_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
-  //printf("X: %.2f \t Y: %.2f \t Z: %.2f\n", *xp, *yp, *zp);
+void getAccel(float *xp, float *yp, float *zp)
+{
+    *xp = read16(ADXL343_REG_DATAX0) * ADXL343_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+    *yp = read16(ADXL343_REG_DATAY0) * ADXL343_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+    *zp = read16(ADXL343_REG_DATAZ0) * ADXL343_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+    // printf("X: %.2f \t Y: %.2f \t Z: %.2f\n", *xp, *yp, *zp);
 }
 
-// equation from https://forum.arduino.cc/t/getting-pitch-and-roll-from-acceleromter-data/694148 
+// equation from https://forum.arduino.cc/t/getting-pitch-and-roll-from-acceleromter-data/694148
 // Task to continuously poll acceleration and calculate roll and pitch
-static void test_adxl343() {
+static void test_adxl343()
+{
     printf("\n>> Polling ADXL343\n");
-    while (1) {
+    while (1)
+    {
         // Get acceleration data and calculate roll and pitch as before
         float xSum = 0, ySum = 0, zSum = 0;
         int numSamples = 0;
 
         // Collect data for 2 seconds (4 samples with 500ms delay)
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++)
+        {
             float xVal, yVal, zVal;
             getAccel(&xVal, &yVal, &zVal);
 
@@ -880,14 +1036,16 @@ static void test_adxl343() {
         trackStateTime(currentState);
     }
 }
-void app_main() {
+
+void app_main()
+{
     // Initialize the mutex
     data_mutex = xSemaphoreCreateMutex();
 
     // Routine
     i2c_master_init();
     i2c_scanner();
-    
+
     // Initialize UART
     init_uart();
 
@@ -902,19 +1060,21 @@ void app_main() {
 
     // Connect to network
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
-    wifi_init_sta();  // Initialize Wi-Fi
+    wifi_init_sta(); // Initialize Wi-Fi
 
     // Check for ADXL343
     uint8_t deviceID;
     getDeviceID(&deviceID);
-    if (deviceID == 0xE5) {
+    if (deviceID == 0xE5)
+    {
         printf("\n>> Found ADAXL343\n");
     }
 
@@ -940,8 +1100,7 @@ void app_main() {
     initialize_websocket_client();
 }
 
-
-// temp app main for button debugging
+// // temp app main for button debugging
 // void app_main() {
 //     // Initialize the buzzer GPIO
 //     gpio_reset_pin(BUZZER_GPIO);
