@@ -123,8 +123,8 @@ The project involves designing and building a smart cat collar that captures, lo
     - Else:
       - Ensure the buzzer is off.
 
-
-
+Circuit diagram:
+![cat-collar-circuit-diagram](https://github.com/BU-EC444/Quest3-Team6-Bardwick-Hathout-Knutsen-Tran/blob/main/CatCollarDiagram.jpg)
 
 ## 6. Summary
 
