@@ -163,4 +163,8 @@ Link to design demo:
 | Portal accessible from open internet | N/A (Professor said it was ok due to double NAT) |  1     | 
 | Web cam operational at the same client | 1 |  1     | 
 | Node.js runs on pi | 1 |  1     | 
- 
+
+ ## 9. AI Code Assertions
+
+All code is labeled appropriately "AI Generated".
+
