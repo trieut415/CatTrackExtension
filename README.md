@@ -146,10 +146,10 @@ The smart cat collar successfully captures and reports activity data, including 
 Everything that we needed for this quest was covered by the skills and we did not need to use external resources except code from ChatGPT that was present in our skills as well.
 
 Link to report video:
-- [Link to video demo](). 
+- [Link to video demo](https://drive.google.com/file/d/1tmxS8HGcO_dwnGMNcW7fP4neTti4bQX-/view?usp=sharing). 
 
 Link to design demo:
-- [Link to video demo]().
+- [Link to video demo](https://drive.google.com/file/d/1KdEOFxNXSFyghgzOxwIRIRRMS36AR_G7/view?usp=sharing).
 
 ## 8. Self-assessment
 ## Rubric
