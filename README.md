@@ -126,26 +126,32 @@ The project involves designing and building a smart cat collar that captures, lo
 
 
 
-6. Summary
-Potential Improvements
-Hardware Interrupts: Replace polling mechanisms with hardware interrupts for the button to reduce CPU usage.
-Circuit Optimization: Simplify the hardware setup to reduce the number of jumper wires and potential points of failure.
-Error Handling: Enhance error checking and handling, especially for network operations and I2C communication.
-Power Management: Implement power-saving features to extend battery life on the collar.
-Results
+## 6. Summary
+
+### Potential Improvements
+- **Hardware Interrupts**: Replace polling mechanisms with hardware interrupts for the button to reduce CPU usage.
+- **Circuit Optimization**: Simplify the hardware setup to reduce the number of jumper wires and potential points of failure.
+- **Error Handling**: Enhance error checking and handling, especially for network operations and I2C communication.
+- **Power Management**: Implement power-saving features to extend battery life on the collar.
+
+### Results
 The smart cat collar successfully captures and reports activity data, including detecting when the cat is sleeping, wandering, or performing a "moonwalk." The activity state is displayed on the alphanumeric display, and data is transmitted to a central server. The device responds to leader updates by buzzing appropriately, and the button interface allows switching between display modes.
 
-Challenges
-Concurrency Issues: Ensuring thread-safe access to shared variables across multiple FreeRTOS tasks required careful use of mutexes.
-Network Communication: Managing WebSocket connections and handling leader updates in real-time presented challenges.
-Sensor Calibration: Fine-tuning the thresholds for activity states to accurately reflect the cat's behavior was time-consuming.
-7. Artifacts
-Links to relevant resources and demonstrations:
+### Challenges
+- **Concurrency Issues**: Ensuring thread-safe access to shared variables across multiple FreeRTOS tasks required careful use of mutexes.
+- **Network Communication**: Managing WebSocket connections and handling leader updates in real-time presented challenges.
+- **Sensor Calibration**: Fine-tuning the thresholds for activity states to accurately reflect the cat's behavior was time-consuming.
 
-Video Demo of the Device: Link to video demo
-Design Presentation: Link to design presentation
-Code Repository: GitHub Repository
-8. Self-assessment
+## 7. Artifacts
+Everything that we needed for this quest was covered by the skills and we did not need to use external resources except code from ChatGPT that was present in our skills as well.
+
+Link to report video:
+- [Link to video demo](). 
+
+Link to design demo:
+- [Link to video demo]().
+
+## 8. Self-assessment
 ## Rubric
 
 | Objective Criterion | Rating | Max Value  | 
