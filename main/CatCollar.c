@@ -81,7 +81,7 @@
 #define EXAMPLE_ESP_MAXIMUM_RETRY 5
 
 #define HOST_IP_ADDR "192.168.1.103"
-#define PORT 3335
+#define PORT 3333
 
 // cat collar definitions
 
@@ -107,15 +107,39 @@ static int s_retry_num = 0;
 
 esp_websocket_client_handle_t client;
 bool isBuzzing = false;
-const char *catId = "3"; // Set this ID for each device (change for each tracker)
+const char *catId = "1"; // Set this ID for each device (change for each tracker)
 
-void buzz(bool isBuzzing)
+
+
+#define MAX_LEADER_ID_LEN 40  // Adjust as needed
+
+// Global variables
+char current_leader_id[MAX_LEADER_ID_LEN] = "";
+char previous_leader_id[MAX_LEADER_ID_LEN] = "";
+
+void buzz(bool isBuzzing, const char *received_leader_id)
 {
+    xSemaphoreTake(data_mutex, portMAX_DELAY);
+    // Compare the received leader ID with the current leader ID
     if (isBuzzing)
+        {
+            gpio_set_level(BUZZER_GPIO, 1); // Turn on the buzzer
+            vTaskDelay(500 / portTICK_PERIOD_MS); // Buzz for 500ms
+            ESP_LOGI(TAG, "Buzzing on");
+            gpio_set_level(BUZZER_GPIO, 0); // Turn off the buzzer
+            vTaskDelay(500 / portTICK_PERIOD_MS); // Pause for 500ms
+    }
+    else if (strcmp(received_leader_id, current_leader_id) != 0)
     {
+        // Leader has changed, buzz
+        ESP_LOGI(TAG, "Leader has changed from %s to %s", current_leader_id, received_leader_id);
+        // Leader has changed
+        strcpy(previous_leader_id, current_leader_id);
+        strcpy(current_leader_id, received_leader_id);
+
         gpio_set_level(BUZZER_GPIO, 1); // Turn on the buzzer
         vTaskDelay(500 / portTICK_PERIOD_MS); // Buzz for 500ms
-        ESP_LOGI(TAG, "Buzzing on");
+        ESP_LOGI(TAG, "Buzzing once");
         gpio_set_level(BUZZER_GPIO, 0); // Turn off the buzzer
         vTaskDelay(500 / portTICK_PERIOD_MS); // Pause for 500ms
     }
@@ -125,10 +149,9 @@ void buzz(bool isBuzzing)
         gpio_set_level(BUZZER_GPIO, 0);
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+    xSemaphoreGive(data_mutex);
+
 }
-
-
-#define MAX_LEADER_ID_LEN 40  // Adjust as needed
 
 static void websocket_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -140,10 +163,14 @@ static void websocket_event_handler(void *arg, esp_event_base_t event_base, int3
         ESP_LOGI(TAG, "Received data: %.*s", data->data_len, (char *)data->data_ptr);
 
         // Ensure data_len does not exceed buffer size - 1 for null terminator
-        if (data->data_len >= MAX_LEADER_ID_LEN) {
-            ESP_LOGE(TAG, "Received data length (%d) exceeds buffer size (%d)", data->data_len, MAX_LEADER_ID_LEN);
-            break;
-        }
+    if (data->data_len < MAX_LEADER_ID_LEN)
+    {
+        char received_leader_id[MAX_LEADER_ID_LEN];
+        memcpy(received_leader_id, data->data_ptr, data->data_len);
+        received_leader_id[data->data_len] = '\0'; // Null-terminate the string
+        buzz(isBuzzing, received_leader_id);
+    }
+
 
         // Null-terminate the received data
         char received_leader_id[MAX_LEADER_ID_LEN];
@@ -709,7 +736,7 @@ void test_alpha_display(void *arg)
         // Prepare the message based on the current display mode
         if (display_mode == 0)
         {
-            snprintf(message, MAX_MESSAGE_LENGTH + 1, "Boots and Cats");
+            snprintf(message, MAX_MESSAGE_LENGTH + 1,"Cats");
         }
         else if (display_mode == 1)
         {
@@ -978,9 +1005,31 @@ void network_listener_task(void *pvParameters)
 
     while (1)
     {
-    buzz(isBuzzing);
-    }
+        // Listen for messages (this is just an example, adjust to your needs)
+        struct sockaddr_in source_addr;
+        socklen_t socklen = sizeof(source_addr);
+        int len = recvfrom(sockfd, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
 
+        if (len > 0)
+        {
+            rx_buffer[len] = '\0'; // Null-terminate received data
+            ESP_LOGI(TAG, "Received message: %s", rx_buffer);
+
+            // Assuming the received message is the new leader ID
+            char received_leader_id[MAX_LEADER_ID_LEN];
+            strncpy(received_leader_id, rx_buffer, MAX_LEADER_ID_LEN - 1);
+            received_leader_id[MAX_LEADER_ID_LEN - 1] = '\0'; // Ensure null-terminated
+
+            // Call buzz function with all parameters
+            buzz(isBuzzing, received_leader_id);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Error receiving data");
+        }
+
+        vTaskDelay(100 / portTICK_PERIOD_MS); // Adjust delay as needed
+    }
 
     close(sockfd);
     vTaskDelete(NULL);
@@ -1101,15 +1150,3 @@ void app_main()
     // Initialize WebSocket connection and start receiving leader updates
     initialize_websocket_client();
 }
-
-// // temp app main for button debugging
-// void app_main() {
-//     // Initialize the buzzer GPIO
-//     gpio_reset_pin(BUZZER_GPIO);
-//     gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
-//     gpio_set_level(BUZZER_GPIO, 0); // Assuming active high
-
-//     while (1) {
-//         buzz(1);
-//     }
-// }
