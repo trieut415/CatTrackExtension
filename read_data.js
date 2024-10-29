@@ -8,9 +8,8 @@ const socketIo = require('socket.io');
 // Define the IP addresses and ports of the ESP32 devices
 const devices = [
     { host: '192.168.1.102', port: 3333 }, // ESP32 1
-    { host: '192.168.1.101', port: 12346 }, // ESP32 2
-    { host: '192.168.1.102', port: 12347 }, // ESP32 3
-    { host: '192.168.1.103', port: 12348 }  // ESP32 4
+    { host: '192.168.1.101', port: 3334 }, // ESP32 2
+    { host: '192.168.1.102', port: 3335 }, // ESP32 3
 ];
 
 // Create an express app
