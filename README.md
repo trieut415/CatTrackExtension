@@ -50,6 +50,7 @@ The project involves designing and building a smart cat collar that captures, lo
    - Use mutexes to protect shared data among tasks.
 
 ## 5. Solution Design
+Note: ```read_data.js``` reads in the data into a generated file ```cat_data.txt```, then ```host_data.js``` hosts the data, so it can be accesible through ```rpi_IP:3000/video``` or ```rpi_IP:3000/chart```
 
 1. **app_main**
    - Initialize Mutex.
