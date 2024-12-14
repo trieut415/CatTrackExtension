@@ -1,171 +1,128 @@
-# 1. Smart Cat Collar with Activity Monitoring
+# Smart Cat Collar with Activity Monitoring
 
-## 2. Authors
-Group 6: Josh Bardwick, Noah Hathout, Cole Knutsen, Trieu Tran
+**Date**: 2024-10-27  
 
-## 3. Date
-10 - 27 - 2024
+## Overview
 
-## 4. Summary
-The project involves designing and building a smart cat collar that captures, logs, and transmits activity data of cats in real-time. The primary focus is to read sensor data periodically, report it in meaningful states (e.g., "Sleepy Time", "Wander Time", "Moonwalk Time"), and display the results on an alphanumeric display as well as transmit data to a central server for leader determination among multiple cats.
+This project focuses on designing and building a smart cat collar that monitors and transmits real-time activity data. The collar uses sensors to detect activity states (e.g., "Sleepy Time", "Wander Time", "Moonwalk Time") and displays the results on an alphanumeric display. It also communicates with a central server for leader determination among multiple cats. This is a proof of concept, implemented on the ESP32, on the ESP-IDF framework.
 
-### Desired Behaviors
+---
 
-1. **Activity Detection**
-   - Use an accelerometer (ADXL343) to detect the cat's activity state: sleeping, wandering, or performing a "moonwalk".
+## Features
 
-2. **State Reporting**
-   - Display the current activity state on a 14-segment alphanumeric display.
-   - Report the state along with a timestamp to a central server via Wi-Fi.
+### Activity Detection
+- An ADXL343 accelerometer detects the cat's activity state: sleeping, wandering, or performing a "moonwalk."
 
-3. **Leader Determination**
-   - Participate in a system where the cat with the most active time over a rolling 10-minute window is designated as the leader.
-   - Receive leader updates from the server and indicate changes via a buzzer.
+### State Reporting
+- The current activity state is displayed on a 14-segment alphanumeric display.  
+- States and timestamps are transmitted to a central server via Wi-Fi.
 
-4. **Button Interface**
-   - Allow switching between different display modes using a button:
-     - **Mode 0**: Display a default message ("Boots and Cats").
-     - **Mode 1**: Display the current activity state.
-     - **Mode 2**: Display the elapsed time in the current state.
+### Leader Determination
+- The system tracks active time over a rolling 10-minute window and designates the most active cat as the leader.  
+- Leader updates are received from the server, and changes are indicated via a buzzer.
 
-5. **Buzzing Mechanism**
-   - Buzz continuously if the cat is the leader.
-   - Buzz once when there is a leader change.
+### Button Interface
+- A button allows switching between display modes:  
+  - **Mode 0**: Default message ("Boots and Cats").  
+  - **Mode 1**: Current activity state.  
+  - **Mode 2**: Elapsed time in the current state.
 
-### Solution Requirements
+### Buzzing Mechanism
+- The buzzer activates continuously when the cat is the leader.  
+- A single buzz indicates a leader change.
 
-1. **Sensor Integration**
-   - Utilize the ADXL343 accelerometer to determine the cat's activity state.
+---
 
-2. **Display Interface**
-   - Use an alphanumeric display to show messages and activity states.
+## System Design
 
-3. **Network Communication**
-   - Connect to a Wi-Fi network and communicate with a central server via WebSocket and UDP.
+### Core Components
+1. **Sensor Integration**  
+   - ADXL343 accelerometer used to determine activity states.  
 
-4. **Concurrency**
-   - Implement FreeRTOS tasks for handling sensor reading, display updates, button presses, and network communication.
+2. **Display Interface**  
+   - A 14-segment alphanumeric display shows real-time activity updates.  
 
-5. **Synchronization**
-   - Use mutexes to protect shared data among tasks.
+3. **Network Communication**  
+   - Uses Wi-Fi for WebSocket and UDP communication with a central server.  
 
-## 5. Solution Design
-Note: ```read_data.js``` reads in the data into a generated file ```cat_data.txt```, then ```host_data.js``` hosts the data, so it can be accesible through ```rpi_IP:3000/video``` or ```rpi_IP:3000/chart```
+4. **Concurrency Management**  
+   - FreeRTOS tasks handle sensor reading, display updates, button presses, and network communication.  
+   - Mutexes ensure safe access to shared data.  
 
-1. **app_main**
-   - Initialize Mutex.
-   - Initialize I2C and UART.
-   - Set up GPIOs for Button and Buzzer.
-   - Connect to Wi-Fi.
-   - Initialize Accelerometer.
+---
 
-2. **Create FreeRTOS Tasks**
-   - **test_adxl343** (Sensor Task)
-   - **task_button_presses** (Button Task)
-   - **test_alpha_display** (Display Task)
-   - **network_listener_task** (Network Listener Task)
+### Task Breakdown
+1. **Initialization (`app_main`)**  
+   - Sets up mutexes, I2C, UART, GPIOs (button, buzzer), Wi-Fi, and the accelerometer.  
 
-3. **Initialize WebSocket Client**
+2. **FreeRTOS Tasks**
+   - **Sensor Task (`test_adxl343`)**  
+     - Reads accelerometer data to calculate roll, pitch, and acceleration.  
+     - Classifies activity states using `getCatState` and updates the shared state.  
 
-4. **Task Reset Button (If Implemented)**
-   - **Loop**: Poll Button.
-   - If button pressed:
-     - Reset activity timers and states.
-     - Turn on an indicator LED (optional).
-     - Log: "Reset button pressed."
-   - Else: Continue polling.
+   - **Button Task (`task_button_presses`)**  
+     - Monitors button presses to cycle through display modes.  
 
-5. **Task Tilt Button (If Implemented)**
-   - **Loop**: Poll Tilt Sensor.
-   - If tilt detected:
-     - Toggle tilt orientation state.
-   - Else: Continue polling.
+   - **Display Task (`test_alpha_display`)**  
+     - Updates the display based on the current mode:  
+       - **Mode 0**: Default message.  
+       - **Mode 1**: Current activity state.  
+       - **Mode 2**: Elapsed time in the state.  
 
-6. **Sensor Task (test_adxl343)**
-   - **Loop**:
-     - Read accelerometer data.
-     - Calculate roll, pitch, and acceleration values.
-     - Determine the cat's activity state using `getCatState`.
-     - Update the shared state and reset timers as needed.
+   - **Network Listener Task (`network_listener_task`)**  
+     - Receives leader updates from the server via UDP.  
+     - Updates the leader ID and triggers appropriate buzzer actions.
 
-7. **Button Task (task_button_presses)**
-   - **Loop**:
-     - Poll the button GPIO.
-     - On button press, cycle through display modes (0, 1, 2).
+3. **WebSocket Event Handling**  
+   - Listens for incoming leader data.  
+   - Updates the buzzer status based on the current leader.  
 
-8. **Display Task (test_alpha_display)**
-   - **Loop**:
-     - Based on the current display mode:
-       - **Mode 0**: Display "Boots and Cats".
-       - **Mode 1**: Display the current activity state.
-       - **Mode 2**: Display the elapsed time in the current state.
-     - Handle scrolling messages if the text exceeds display capacity.
-     - Update the alphanumeric display via I2C.
+4. **Buzz Functionality (`buzz`)**  
+   - Continuous buzzing if the cat is the leader.  
+   - A single buzz indicates a leader change.
 
-9. **Network Listener Task (network_listener_task)**
-   - **Loop**:
-     - Listen for leader updates from the server via UDP.
-     - On receiving a new leader ID:
-       - Update the current leader ID.
-       - Call the `buzz` function accordingly.
+---
 
-10. **WebSocket Event Handler (websocket_event_handler)**
-    - **On Receiving Data**:
-      - Parse the received leader ID.
-      - Update `isBuzzing` based on whether this device is the leader.
-      - Call the `buzz` function.
+### Supporting Scripts
+- **`read_data.js`**: Reads sensor data and generates a `cat_data.txt` file.  
+- **`host_data.js`**: Hosts the data, accessible via endpoints (`rpi_IP:3000/video`, `rpi_IP:3000/chart`).  
 
-11. **Buzz Function (buzz)**
-    - If `isBuzzing` is true:
-      - Buzz continuously (on/off every 500ms).
-    - Else If Leader Changed:
-      - Buzz once to indicate leader change.
-      - Update `current_leader_id` and `previous_leader_id`.
-    - Else:
-      - Ensure the buzzer is off.
+---
 
-Circuit diagram:
-![cat-collar-circuit-diagram](https://github.com/BU-EC444/Quest3-Team6-Bardwick-Hathout-Knutsen-Tran/blob/main/CatCollarDiagram.jpg)
+## Visuals
 
-## 6. Summary
+### Circuit Diagram
+![Circuit Diagram](https://github.com/BU-EC444/Quest3-Team6-Bardwick-Hathout-Knutsen-Tran/blob/main/CatCollarDiagram.jpg)
 
-### Potential Improvements
-- **Hardware Interrupts**: Replace polling mechanisms with hardware interrupts for the button to reduce CPU usage.
-- **Circuit Optimization**: Simplify the hardware setup to reduce the number of jumper wires and potential points of failure.
-- **Error Handling**: Enhance error checking and handling, especially for network operations and I2C communication.
-- **Power Management**: Implement power-saving features to extend battery life on the collar.
+---
 
-### Results
-The smart cat collar successfully captures and reports activity data, including detecting when the cat is sleeping, wandering, or performing a "moonwalk." The activity state is displayed on the alphanumeric display, and data is transmitted to a central server. The device responds to leader updates by buzzing appropriately, and the button interface allows switching between display modes.
+## Potential Improvements
+- **Hardware Interrupts**: Replace polling mechanisms with interrupts to improve efficiency.  
+- **Circuit Optimization**: Reduce hardware complexity to minimize potential points of failure.  
+- **Error Handling**: Enhance error detection and recovery for network and I2C operations.  
+- **Power Management**: Implement power-saving features to extend battery life.  
 
-### Challenges
-- **Concurrency Issues**: Ensuring thread-safe access to shared variables across multiple FreeRTOS tasks required careful use of mutexes.
-- **Network Communication**: Managing WebSocket connections and handling leader updates in real-time presented challenges.
-- **Sensor Calibration**: Fine-tuning the thresholds for activity states to accurately reflect the cat's behavior was time-consuming.
+---
 
-## 7. Artifacts
-Everything that we needed for this quest was covered by the skills and we did not need to use external resources except code from ChatGPT that was present in our skills as well.
+## Results
 
-Link to report video:
-- [Link to video demo](https://drive.google.com/file/d/1tmxS8HGcO_dwnGMNcW7fP4neTti4bQX-/view?usp=sharing). 
+The smart cat collar successfully detects and reports activity states, including sleeping, wandering, and performing a "moonwalk." It displays activity data on the alphanumeric display and communicates updates to a central server. The buzzer alerts changes in leader status, and the button interface allows mode switching.
 
-Link to design demo:
-- [Link to video demo](https://drive.google.com/file/d/1KdEOFxNXSFyghgzOxwIRIRRMS36AR_G7/view?usp=sharing).
+---
 
-## 8. Self-assessment
-## Rubric
+## Challenges
+1. **Concurrency Management**  
+   - Ensuring thread-safe shared data access with mutexes across FreeRTOS tasks.  
 
-| Objective Criterion | Rating | Max Value  | 
-|---------------------------------------------|:-----------:|:---------:|
-| Cat Trackers connected via WiFi | 1 |  1     | 
-| Data from each (5) Cat Tracker sent to central server and aggregated | 1 |  1     | 
-| Portal reports live leader status for each activity state for each cat and charts them on web site | 1 |  1     | 
-| Central server reports live leader status back to Cat Tracker alpha displays and buzzer | 1 |  1     | 
-| Portal accessible from open internet | N/A (Professor said it was ok due to double NAT) |  1     | 
-| Web cam operational at the same client | 1 |  1     | 
-| Node.js runs on pi | 1 |  1     | 
+2. **Network Communication**  
+   - Real-time WebSocket and UDP operations required careful synchronization.  
 
- ## 9. AI Code Assertions
+3. **Sensor Calibration**  
+   - Tuning activity state thresholds for accurate detection required significant effort.  
 
-All code is labeled appropriately "AI Generated".
+---
 
+## Demonstrations
+
+- [Video Demo: Report](https://drive.google.com/file/d/1tmxS8HGcO_dwnGMNcW7fP4neTti4bQX-/view?usp=sharing)  
+- [Video Demo: Design](https://drive.google.com/file/d/1KdEOFxNXSFyghgzOxwIRIRRMS36AR_G7/view?usp=sharing)  
