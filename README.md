@@ -136,7 +136,7 @@ The FitCat system consists of three core components:
 
 ### Visuals
 #### System Architecture Diagram
-![Architecture Diagram](https://github.com/trieut415/CatTrackExtension/blob/main/FitCatArchitecture.jpg)
+![Architecture Diagram](https://github.com/trieut415/CatTrackExtension/blob/main/CatCollarDiagram.jpg)
 
 ---
 
