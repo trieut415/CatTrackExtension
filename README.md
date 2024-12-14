@@ -92,8 +92,7 @@ This project focuses on designing and building a smart cat collar that monitors 
 ## Visuals
 
 ### Circuit Diagram
-![Circuit Diagram](https://github.com/CatTrackExtension/blob/main/CatCollarDiagram.jpg)
-
+![Circuit Diagram](https://github.com/trieut415/CatTrackExtension/blob/main/CatCollarDiagram.jpg)
 ---
 
 ## Potential Improvements
