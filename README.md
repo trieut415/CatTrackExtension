@@ -92,7 +92,7 @@ This project focuses on designing and building a smart cat collar that monitors 
 ## Visuals
 
 ### Circuit Diagram
-![Circuit Diagram](https://github.com/BU-EC444/Quest3-Team6-Bardwick-Hathout-Knutsen-Tran/blob/main/CatCollarDiagram.jpg)
+![Circuit Diagram](https://github.com/CatTrackExtension/blob/main/CatCollarDiagram.jpg)
 
 ---
 
